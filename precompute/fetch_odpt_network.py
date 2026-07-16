@@ -112,10 +112,14 @@ def fetch_operator(op: str, source: str, keys: dict):
 def main():
     keys = read_keys()
     check_only = "--check" in sys.argv
+    # --only 事業者名 で1社だけ再取得できる(例: --only Yurikamome)
+    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"{'事業者':<12} {'取得元':<10} {'駅':>5} {'路線':>4} {'列車時刻表':>8}  結果")
     for op, source in OPERATORS:
+        if only and op != only:
+            continue
         if source not in keys:
             print(f"{op:<12} {source:<10} {'-':>5} {'-':>4} {'-':>8}  スキップ(トークン未配置)")
             continue
@@ -123,11 +127,44 @@ def main():
         if err:
             print(f"{op:<12} {source:<10} {'-':>5} {'-':>4} {'-':>8}  NG: {err}")
             continue
-        ok = len(timetables) > 0
-        print(f"{op:<12} {source:<10} {len(stations):>5} {len(railways):>4} {len(timetables):>8}  {'OK' if ok else 'NG(時刻表なし)'}")
-        if ok and not check_only:
-            for data, fname in [(stations, "stations"), (railways, "railways"),
-                                (timetables, "train_timetables")]:
+        save_files = []
+        if len(timetables) > 0:
+            note = "OK"
+            save_files = [(stations, "stations"), (railways, "railways"),
+                          (timetables, "train_timetables")]
+        elif op == "Yurikamome":
+            # ゆりかもめは列車時刻表が未提供で駅時刻表のみ(2026-07確認)。
+            # 駅時刻表を保存し、reconstruct_yurikamome.py で列車時刻表を復元する
+            try:
+                stt = fetch(source, keys, "odpt:StationTimetable",
+                            {"odpt:operator": f"odpt.Operator:{op}"})
+            except (urllib.error.HTTPError, RuntimeError):
+                stt = []
+            # 事業者指定のodpt:Stationが全駅を返さないことがあるため、
+            # 路線のstationOrderにある駅IDを1駅ずつ引いて補完する(座標が必要)
+            station_order = railways[0].get("odpt:stationOrder", []) if railways else []
+            if len(stations) < len(station_order):
+                got = {s.get("owl:sameAs") for s in stations}
+                for o in station_order:
+                    sid = o.get("odpt:station")
+                    if not sid or sid in got:
+                        continue
+                    try:
+                        stations += fetch(source, keys, "odpt:Station", {"owl:sameAs": sid})
+                    except (urllib.error.HTTPError, RuntimeError):
+                        pass
+                    time.sleep(0.3)
+            if stt:
+                note = f"OK(駅{len(stations)}・駅時刻表{len(stt)}件→列車を復元する)"
+                save_files = [(stations, "stations"), (railways, "railways"),
+                              (stt, "station_timetables")]
+            else:
+                note = "NG(列車時刻表も駅時刻表も未提供)"
+        else:
+            note = "NG(時刻表なし)"
+        print(f"{op:<12} {source:<10} {len(stations):>5} {len(railways):>4} {len(timetables):>8}  {note}")
+        if save_files and not check_only:
+            for data, fname in save_files:
                 with open(OUT_DIR / f"{op}_{fname}.json", "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False)
         time.sleep(0.6)
