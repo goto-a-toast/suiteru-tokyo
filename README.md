@@ -45,6 +45,34 @@
 - [ ] M7: LLMコンシェルジュ
 - [ ] M8: 応募材料の最終化(カーブv1化・デモ動画・応募文面)
 
+## 開発のはじめ方(どの端末からでも)
+
+このリポジトリだけで開発を再開できる。追加のツールはPython 3とNode.js(テスト用)のみ。
+
+```bash
+git clone https://github.com/goto-a-toast/suiteru-tokyo.git
+cd suiteru-tokyo
+
+# 1. アプリをローカルで動かす(ビルド不要・依存なし)
+python3 -m http.server 8000 --directory webapp
+# → http://localhost:8000 (運行情報デモは http://localhost:8000/?demo=alerts )
+
+# 2. テストを回す
+node precompute/test_plan_itinerary.js      # M4 行程最適化
+node precompute/test_transit_alerts.js      # M6 運行情報アラート
+python3 precompute/test_travel_routes.py    # 路線案内の生成ロジック
+```
+
+- **データ再生成は普段の開発では不要**(生成済みJSONがwebapp/data/にコミット済み)。
+  ダイヤ改正時などに再生成する場合のみODPTのAPIキーが要る(手順は上のM3/路線案内の項)
+- **APIキーの置き場所**: `data/odpt_apikey.txt` / `data/odpt_challenge_apikey.txt`。
+  `data/*` は.gitignore済みなのでコミットされない。キー自体はパスワードマネージャ等で
+  端末間共有すること(リポジトリには絶対に入れない)
+- **ODPTの生データ(data/odpt/)はコミットしない**。チャレンジ限定データは再配布できないため、
+  各端末でAPIキーから取得する方針
+- Claude Code(Web版)のセッションはクラウド側にあるため、claude.ai のアカウントがあれば
+  ブラウザ・スマホアプリのどれからでも同じセッションの続きができる
+
 ## 正直さについて(方針)
 
 本作品の混雑情報は**統計と公表資料に基づく「予報」であり、実測のリアルタイム値ではない**。
