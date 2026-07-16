@@ -3,116 +3,138 @@
 M3-前半: ODPT APIから鉄道ネットワークの素材(駅・路線・列車時刻表)を取得する
 
 使い方:
-  1. ODPT開発者サイトで発行されたAPIキー(アクセストークン)を
-     data/odpt_apikey.txt に1行だけ貼り付けて保存する(.gitignore対象なので公開されない)
-  2. まず可用性チェック:  python precompute/fetch_odpt_network.py --check
-     → 必要な各社のデータが自分のキーで取れるかの一覧が出る
-  3. 本取得:              python precompute/fetch_odpt_network.py
-     → data/odpt/ にJSONが保存される(以降のbuild_network_tokyo.pyが読む)
+  1. APIキーを以下に置く(.gitignore対象なので公開されない):
+       data/odpt_apikey.txt            … ODPT開発者サイト(センター)のトークン
+       data/odpt_challenge_apikey.txt  … チャレンジ2026専用トークン(エントリー後に発行。無くても動く)
+  2. 可用性チェック:  python precompute/fetch_odpt_network.py --check
+  3. 本取得:          python precompute/fetch_odpt_network.py
+     → data/odpt/ に事業者ごとのJSONが保存される
 
-なぜGTFSでなくODPT JSONか(2026-07-16調査):
-  ODPTセンターでは都営・メトロ等の一部だけがGTFS提供で、JR東日本や私鉄の多くは
-  ODPT独自JSON(odpt:Station / odpt:TrainTimetable)での提供のため、
-  全社を同じ形式で扱えるJSONに統一する。
+2026-07-16調査メモ:
+  - センター(api.odpt.org)で列車時刻表が取れるのは TokyoMetro / Toei / TWR
+  - JR東日本・ゆりかもめ・京王・京成・東武・西武などのチャレンジ限定データは
+    api-challenge.odpt.org + チャレンジ専用トークンが必要(センターのトークンでは403)
+  - 列車時刻表は1回の応答が1000件で頭打ちになるため、路線ごとに分割して取得する
 """
 
 import json
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY_FILE = ROOT / "data" / "odpt_apikey.txt"
+CHALLENGE_KEY_FILE = ROOT / "data" / "odpt_challenge_apikey.txt"
 OUT_DIR = ROOT / "data" / "odpt"
-API_BASE = "https://api.odpt.org/api/v4/"
 
-# 取得対象の事業者と路線(スポット22箇所の最寄り駅をカバーする範囲)
-# 路線IDはodpt:Railwayの命名規則(odpt.Railway:事業者.路線名)
+ENDPOINTS = {
+    "center": "https://api.odpt.org/api/v4/",
+    "challenge": "https://api-challenge.odpt.org/api/v4/",
+}
+
+# 取得対象の事業者(スポット22箇所の最寄り駅をカバーする範囲)。
+# source: どちらのエンドポイントを先に試すか
 OPERATORS = [
-    "JR-East",       # 山手線・中央線・京浜東北線など
-    "TokyoMetro",    # 銀座線・日比谷線・千代田線・丸ノ内線・半蔵門線など
-    "Toei",          # 浅草線・大江戸線・新宿線・三田線
-    "Yurikamome",    # 豊洲市場・チームラボ・お台場
-    "TWR",           # りんかい線(お台場)
-    "Tobu",          # スカイツリーライン
-    "Keio",          # 高尾山
-    "Keisei",        # 柴又(金町線)
-    "Seibu",         # 西武新宿(歌舞伎町)
+    ("TokyoMetro", "center"),
+    ("Toei", "center"),
+    ("TWR", "center"),        # りんかい線(お台場)
+    ("JR-East", "challenge"),  # 山手線・中央線など(チャレンジ限定)
+    ("Yurikamome", "challenge"),
+    ("Tobu", "challenge"),     # スカイツリーライン
+    ("Keio", "challenge"),     # 高尾山
+    ("Keisei", "challenge"),   # 柴又
+    ("Seibu", "challenge"),    # 西武新宿
 ]
 
 
-def read_key() -> str:
-    if not KEY_FILE.exists():
-        print(f"エラー: APIキーのファイルがありません: {KEY_FILE}")
-        print("ODPT開発者サイトのアクセストークンを、このファイルに1行だけ貼り付けてください。")
+def read_keys() -> dict:
+    keys = {}
+    if KEY_FILE.exists():
+        keys["center"] = KEY_FILE.read_text(encoding="utf-8").strip()
+    if CHALLENGE_KEY_FILE.exists():
+        keys["challenge"] = CHALLENGE_KEY_FILE.read_text(encoding="utf-8").strip()
+    if "center" not in keys:
+        print(f"エラー: {KEY_FILE} がありません")
         sys.exit(1)
-    return KEY_FILE.read_text(encoding="utf-8").strip()
+    if "challenge" not in keys:
+        print("注意: チャレンジ専用トークン(data/odpt_challenge_apikey.txt)が未配置。"
+              "JR東日本などチャレンジ限定データはスキップされます。\n")
+    return keys
 
 
-def fetch(data_type: str, params: dict, key: str):
-    """ODPT APIを1回呼ぶ。例: fetch("odpt:Station", {"odpt:operator": "odpt.Operator:JR-East"})"""
+def fetch(source: str, keys: dict, data_type: str, params: dict):
+    """ODPT APIを1回呼ぶ。sourceは 'center' か 'challenge'"""
+    if source not in keys:
+        raise RuntimeError(f"{source}のトークンが未配置")
     query = dict(params)
-    query["acl:consumerKey"] = key
-    url = API_BASE + data_type + "?" + urllib.parse.urlencode(query)
+    query["acl:consumerKey"] = keys[source]
+    url = ENDPOINTS[source] + data_type + "?" + urllib.parse.urlencode(query)
     req = urllib.request.Request(url, headers={"User-Agent": "suiteru-tokyo/0.1"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def check(key: str):
-    """各事業者の駅・列車時刻表が取れるかを確認して表にする"""
-    print(f"{'事業者':<12} {'駅数':>6} {'列車時刻表(件)':>10}  判定")
-    ng = []
-    for op in OPERATORS:
-        op_id = f"odpt.Operator:{op}"
+def fetch_operator(op: str, source: str, keys: dict):
+    """1事業者分の駅・路線・列車時刻表を取得する。
+    列車時刻表は1000件上限を避けるため路線ごとに分けて取る。
+    戻り値: (stations, railways, timetables) いずれもlist。取得不能ならNone"""
+    op_id = f"odpt.Operator:{op}"
+    try:
+        stations = fetch(source, keys, "odpt:Station", {"odpt:operator": op_id})
+        railways = fetch(source, keys, "odpt:Railway", {"odpt:operator": op_id})
+    except (urllib.error.HTTPError, RuntimeError) as e:
+        return None, None, None, f"駅・路線の取得失敗({e})"
+
+    timetables = []
+    for rw in railways:
+        rw_id = rw["owl:sameAs"]
         try:
-            stations = fetch("odpt:Station", {"odpt:operator": op_id}, key)
-            n_sta = len(stations)
-        except Exception as e:
-            n_sta = f"エラー({e})"
-        try:
-            # 件数確認だけなので路線を絞らず事業者単位で取る
-            tt = fetch("odpt:TrainTimetable", {"odpt:operator": op_id}, key)
-            n_tt = len(tt)
-        except Exception as e:
-            n_tt = f"エラー({e})"
-        ok = isinstance(n_sta, int) and n_sta > 0 and isinstance(n_tt, int) and n_tt > 0
-        if not ok:
-            ng.append(op)
-        print(f"{op:<12} {str(n_sta):>6} {str(n_tt):>10}  {'OK' if ok else 'NG'}")
-        time.sleep(1)  # 連続アクセスの行儀(レートリミット対策)
-    if ng:
-        print(f"\nNGの事業者: {ng}")
-        print("→ build_network_tokyo.py 側で代替(近隣駅から徒歩など)を検討する")
-    else:
-        print("\n全事業者OK。本取得(--checkなし)に進んでください。")
+            tt = fetch(source, keys, "odpt:TrainTimetable", {"odpt:railway": rw_id})
+        except (urllib.error.HTTPError, RuntimeError) as e:
+            return None, None, None, f"{rw_id}の時刻表取得失敗({e})"
+        if len(tt) >= 1000:
+            # それでも上限に当たる場合は方面別に分ける
+            tt = []
+            for direction in rw.get("odpt:ascendingRailDirection"), rw.get("odpt:descendingRailDirection"):
+                if direction:
+                    tt += fetch(source, keys, "odpt:TrainTimetable",
+                                {"odpt:railway": rw_id, "odpt:railDirection": direction})
+            if len(tt) >= 2000:
+                print(f"  警告: {rw_id} は方面別でも1000件上限に達している可能性")
+        timetables += tt
+        time.sleep(0.6)
+    return stations, railways, timetables, None
 
 
-def download_all(key: str):
-    """駅・路線・列車時刻表を事業者ごとに保存する"""
+def main():
+    keys = read_keys()
+    check_only = "--check" in sys.argv
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for op in OPERATORS:
-        op_id = f"odpt.Operator:{op}"
-        for data_type, fname in [("odpt:Station", "stations"),
-                                 ("odpt:Railway", "railways"),
-                                 ("odpt:TrainTimetable", "train_timetables")]:
-            out = OUT_DIR / f"{op}_{fname}.json"
-            try:
-                data = fetch(data_type, {"odpt:operator": op_id}, key)
-            except Exception as e:
-                print(f"{op} {data_type}: 取得失敗 ({e})")
-                continue
-            with open(out, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-            print(f"{op} {data_type}: {len(data)}件 → {out.name}")
-            time.sleep(1)
+
+    print(f"{'事業者':<12} {'取得元':<10} {'駅':>5} {'路線':>4} {'列車時刻表':>8}  結果")
+    for op, source in OPERATORS:
+        if source not in keys:
+            print(f"{op:<12} {source:<10} {'-':>5} {'-':>4} {'-':>8}  スキップ(トークン未配置)")
+            continue
+        stations, railways, timetables, err = fetch_operator(op, source, keys)
+        if err:
+            print(f"{op:<12} {source:<10} {'-':>5} {'-':>4} {'-':>8}  NG: {err}")
+            continue
+        ok = len(timetables) > 0
+        print(f"{op:<12} {source:<10} {len(stations):>5} {len(railways):>4} {len(timetables):>8}  {'OK' if ok else 'NG(時刻表なし)'}")
+        if ok and not check_only:
+            for data, fname in [(stations, "stations"), (railways, "railways"),
+                                (timetables, "train_timetables")]:
+                with open(OUT_DIR / f"{op}_{fname}.json", "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+        time.sleep(0.6)
+
+    if not check_only:
+        print(f"\n保存先: {OUT_DIR}")
 
 
 if __name__ == "__main__":
-    key = read_key()
-    if "--check" in sys.argv:
-        check(key)
-    else:
-        download_all(key)
+    main()
