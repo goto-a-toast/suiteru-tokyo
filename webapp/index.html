@@ -55,6 +55,20 @@
   #planBtn { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
              padding: 9px 22px; font-size: .95rem; cursor: pointer; }
   #planBtn:disabled { background: #9ca3af; cursor: not-allowed; }
+  #clearBtn { background: none; color: var(--ink-2); border: 1px solid var(--line);
+              border-radius: 8px; padding: 8px 14px; font-size: .85rem; cursor: pointer; }
+  #clearBtn:disabled { opacity: .45; cursor: not-allowed; }
+  /* ユーザー追加スポット */
+  #addspot { margin-top: 12px; }
+  .addrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .addrow input[type="text"] { flex: 1; min-width: 160px; padding: 6px 8px;
+              border: 1px solid var(--line); border-radius: 8px; font-size: .9rem; }
+  .addrow button { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+              padding: 7px 16px; cursor: pointer; }
+  .addrow button:disabled { background: #9ca3af; cursor: not-allowed; }
+  #addmap { height: 240px; border: 1px solid var(--line); border-radius: 8px; margin-top: 6px; z-index: 0; }
+  .delbtn { background: none; border: 1px solid var(--line); color: #b91c1c;
+            border-radius: 999px; padding: 1px 10px; font-size: .72rem; cursor: pointer; }
   /* 結果 */
   #result { max-width: 1100px; margin: 14px auto; }
   .reduction { font-size: 1.05rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px;
@@ -116,6 +130,20 @@
   </div>
 
   <div class="grid" id="spots"></div>
+
+  <!-- ユーザー追加スポット -->
+  <div class="card" id="addspot">
+    <h3 id="t-addtitle"></h3>
+    <div class="sub" id="t-addnote"></div>
+    <div class="addrow">
+      <input type="text" id="addName" maxlength="40">
+      <select id="addCategory"></select>
+      <button id="addBtn"></button>
+    </div>
+    <div class="sub" id="t-addplace"></div>
+    <div id="addmap"></div>
+  </div>
+
   <div id="result"></div>
 </main>
 
@@ -123,6 +151,7 @@
   <div class="prow">
     <span id="selcount"></span>
     <span class="spacer"></span>
+    <button id="clearBtn" disabled></button>
     <button id="planBtn" disabled></button>
   </div>
 </div>
@@ -131,6 +160,7 @@
 
 <script src="js/plan_itinerary.js"></script>
 <script src="js/transit_alerts.js"></script>
+<script src="js/custom_spots.js"></script>
 <script src="vendor/leaflet/leaflet.js"></script>
 <script>
 "use strict";
@@ -158,6 +188,17 @@ const I18N = {
     travel: (m) => `↓ 移動 約${m}分(公共交通+徒歩)`,
     walkOnly: "徒歩",
     stay: "滞在", crowd: "混雑",
+    clear: "選択をクリア",
+    addTitle: "＋ 行きたい場所を追加",
+    addNote: "リストにない場所も行程に入れられます。混雑はカテゴリ別の推定テンプレート、所要時間は最寄りスポット経由の概算になります。",
+    addPlace: "地図をクリック(タップ)して場所を指定:",
+    addBtn: "追加する",
+    addNeedInput: "名前の入力と地図での場所指定をしてください",
+    customChip: "追加スポット",
+    customNote: "混雑はテンプレート・所要時間は概算",
+    remove: "削除",
+    approx: "(概算)",
+    approxWarn: "⚠ 追加スポットを含む移動時間は概算です(最寄りスポット経由+徒歩で推定)",
     alertsTitle: "🚧 運行情報(リアルタイム)",
     alertsDemo: "保存済みサンプルのリプレイ表示です(実際の運行情報ではありません)",
     alertsPlanTitle: "⚠ この行程に関係する可能性のある運行情報",
@@ -187,6 +228,17 @@ const I18N = {
     travel: (m) => `↓ approx. ${m} min by transit + walk`,
     walkOnly: "Walk",
     stay: "Stay", crowd: "Crowd",
+    clear: "Clear selection",
+    addTitle: "＋ Add your own place",
+    addNote: "Add any place to your itinerary. Crowd levels use a category template and travel times are rough estimates via the nearest listed spot.",
+    addPlace: "Click (tap) the map to set the location:",
+    addBtn: "Add",
+    addNeedInput: "Enter a name and pick a location on the map",
+    customChip: "Your spot",
+    customNote: "Crowd: template ・ travel: estimate",
+    remove: "Remove",
+    approx: "(approx.)",
+    approxWarn: "⚠ Travel times involving your own spots are rough estimates (via the nearest listed spot + walking)",
     alertsTitle: "🚧 Service alerts (real-time)",
     alertsDemo: "Replaying a saved sample response (not live data)",
     alertsPlanTitle: "⚠ Service alerts that may affect this itinerary",
@@ -213,6 +265,21 @@ const categoryLabel = (c) => (lang === "ja" ? c : CATEGORY_EN[c] || c);
 
 /* ---------------- データ読み込み ---------------- */
 let PROFILES = null, MATRIX = null, ROUTES = null;
+let EXT = null;  // 公式+ユーザー追加スポットを合成した {profiles, matrix}
+
+/* ユーザー追加スポット(この端末のlocalStorageに保存) */
+const CUSTOM_KEY = "suiteru_custom_spots";
+let CUSTOM_SPOTS = [];
+try { CUSTOM_SPOTS = JSON.parse(localStorage.getItem(CUSTOM_KEY)) || []; } catch (e) {}
+
+function refreshExt() {
+  EXT = buildExtendedData(PROFILES, MATRIX, CUSTOM_SPOTS);
+}
+
+function saveCustoms() {
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(CUSTOM_SPOTS)); } catch (e) {}
+  refreshExt();
+}
 let ALERTS = [];           // 正規化済み運行情報(平常運転も含む生の一覧)
 let ALERTS_DEMO = false;   // リプレイ表示中か(UIに明示する)
 const selected = new Set();
@@ -270,6 +337,7 @@ async function init() {
     fetch("data/travel_matrix.json").then((r) => r.json()),
   ]);
   PROFILES = p; MATRIX = m;
+  refreshExt();
   // 路線案内(任意データ)。precompute再実行前のデプロイには無いので、無ければ黙って非表示
   fetch("data/travel_routes.json")
     .then((r) => (r.ok ? r.json() : null))
@@ -283,13 +351,14 @@ async function init() {
     o.value = i + 1; o.textContent = n; if (i === now) o.selected = true;
     monthSel.appendChild(o);
   });
+  initAddSpot();
   render();
 }
 
 /* スポットが行程対象か(経路データがあるか) */
 function hasRoute(id) {
-  const i = MATRIX.spot_ids.indexOf(id);
-  return MATRIX.weekday[i].some((v) => v >= 0);
+  const i = EXT.matrix.spot_ids.indexOf(id);
+  return EXT.matrix.weekday[i].some((v) => v >= 0);
 }
 
 function crowdColor(v) {
@@ -327,10 +396,25 @@ function render() {
   Array.from(document.getElementById("month").options).forEach((o, i) => o.textContent = t.monthNames[i]);
   renderAlerts(); // 言語切替でアラートも描き直す
 
+  // ユーザー追加フォームのラベル
+  document.getElementById("t-addtitle").textContent = t.addTitle;
+  document.getElementById("t-addnote").textContent = t.addNote;
+  document.getElementById("t-addplace").textContent = t.addPlace;
+  document.getElementById("addBtn").textContent = t.addBtn;
+  const catSel = document.getElementById("addCategory");
+  const prevCat = catSel.value;
+  catSel.innerHTML = "";
+  for (const c of Object.keys(CATEGORY_TEMPLATE)) {
+    const o = document.createElement("option");
+    o.value = c; o.textContent = categoryLabel(c);
+    catSel.appendChild(o);
+  }
+  if (prevCat) catSel.value = prevCat;
+
   const wrap = document.getElementById("spots");
   wrap.innerHTML = "";
   const HOURS = Array.from({ length: 18 }, (_, i) => i + 5); // 5時〜22時を表示
-  for (const s of PROFILES.spots) {
+  for (const s of EXT.profiles.spots) {
     const card = document.createElement("div");
     card.className = "card";
     const name = lang === "ja" ? s.name_ja : s.name_en;
@@ -346,8 +430,10 @@ function render() {
         style="${closed ? "" : `background:${crowdColor(v)}`}"></div>`;
     }).join("");
     card.innerHTML = `
-      <h3>${name} <span class="chip">${categoryLabel(s.category)}</span></h3>
-      <div class="sub">${lang === "ja" ? s.name_en : s.name_ja} ・ ${t.crowd}Lv ${lvl}</div>
+      <h3>${name} <span class="chip">${s.custom ? t.customChip : categoryLabel(s.category)}</span>
+        ${s.custom ? `<span class="spacer"></span><button class="delbtn" data-del="${s.id}">${t.remove}</button>` : ""}</h3>
+      <div class="sub">${s.custom ? `${categoryLabel(s.category)} ・ ${t.customNote}`
+        : `${lang === "ja" ? s.name_en : s.name_ja} ・ ${t.crowd}Lv ${lvl}`}</div>
       <div class="heat">${heat}</div>
       <div class="hlabels">${HOURS.map((h) => `<span>${h}</span>`).join("")}</div>
       <div class="besttime">${t.besttime}<b>${bw.h}:00–${bw.h + 2}:00</b></div>
@@ -356,6 +442,14 @@ function render() {
         : `<span class="noroute">${t.noroute}</span>`}</div>`;
     wrap.appendChild(card);
   }
+  wrap.querySelectorAll(".delbtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      CUSTOM_SPOTS = CUSTOM_SPOTS.filter((c) => c.id !== btn.dataset.del);
+      selected.delete(btn.dataset.del);
+      saveCustoms();
+      render();
+    });
+  });
   wrap.querySelectorAll("input[type=checkbox]").forEach((cb) => {
     cb.addEventListener("change", () => {
       if (cb.checked) {
@@ -374,6 +468,46 @@ function updatePlanner() {
   const btn = document.getElementById("planBtn");
   btn.textContent = t.plan;
   btn.disabled = selected.size < 2;
+  const clr = document.getElementById("clearBtn");
+  clr.textContent = t.clear;
+  clr.disabled = selected.size === 0;
+}
+
+/* ---------------- ユーザー追加スポットのフォーム ---------------- */
+let ADDMAP = null, ADDMARKER = null, ADD_LATLNG = null;
+
+function initAddSpot() {
+  if (typeof L === "undefined") {           // Leafletが無い環境ではフォームごと隠す
+    document.getElementById("addspot").style.display = "none";
+    return;
+  }
+  ADDMAP = L.map("addmap", { scrollWheelZoom: false }).setView([35.6812, 139.7671], 11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(ADDMAP);
+  ADDMAP.on("click", (e) => {
+    ADD_LATLNG = e.latlng;
+    if (ADDMARKER) ADDMARKER.setLatLng(e.latlng);
+    else ADDMARKER = L.marker(e.latlng).addTo(ADDMAP);
+  });
+  document.getElementById("addBtn").addEventListener("click", () => {
+    const t = I18N[lang];
+    const name = document.getElementById("addName").value.trim();
+    if (!name || !ADD_LATLNG) { alert(t.addNeedInput); return; }
+    CUSTOM_SPOTS.push({
+      id: "custom_" + Date.now(),
+      name,
+      category: document.getElementById("addCategory").value,
+      lat: Math.round(ADD_LATLNG.lat * 1e5) / 1e5,
+      lon: Math.round(ADD_LATLNG.lng * 1e5) / 1e5,
+    });
+    saveCustoms();
+    document.getElementById("addName").value = "";
+    if (ADDMARKER) { ADDMAP.removeLayer(ADDMARKER); ADDMARKER = null; }
+    ADD_LATLNG = null;
+    render();
+  });
 }
 
 /* ---------------- 行程マップ ---------------- */
@@ -391,7 +525,7 @@ function renderItineraryMap(legs) {
   }).addTo(MAP);
   const t = I18N[lang];
   const pts = legs.map((l) => {
-    const s = PROFILES.spots.find((x) => x.id === l.spot_id);
+    const s = EXT.profiles.spots.find((x) => x.id === l.spot_id);
     return { l, s, ll: [s.lat, s.lon] };
   });
   L.polyline(pts.map((p) => p.ll), { color: "#0f766e", weight: 3, dashArray: "6 8", opacity: .8 }).addTo(MAP);
@@ -439,13 +573,13 @@ function runPlan() {
     end_time: document.getElementById("endTime").value,
     month: Number(document.getElementById("month").value),
   };
-  const r = planItinerary(req, { profiles: PROFILES, matrix: MATRIX });
+  const r = planItinerary(req, { profiles: EXT.profiles, matrix: EXT.matrix });
   const el = document.getElementById("result");
   if (!r.ok) {
     let msg = r.reason;
     if (r.unreachable) {
       const names = r.unreachable.map((id) => {
-        const s = PROFILES.spots.find((x) => x.id === id);
+        const s = EXT.profiles.spots.find((x) => x.id === id);
         return lang === "ja" ? s.name_ja : s.name_en;
       });
       msg = t.errUnreachable + names.join(", ");
@@ -453,7 +587,7 @@ function runPlan() {
     el.innerHTML = `<div class="err">${msg}</div>`;
   } else {
     // M6: 行程に使うスポットの路線に異常があれば、結果の先頭で警告する
-    const planSpots = r.legs.map((l) => PROFILES.spots.find((s) => s.id === l.spot_id));
+    const planSpots = r.legs.map((l) => EXT.profiles.spots.find((s) => s.id === l.spot_id));
     const hits = matchAlertsToSpots(ALERTS, planSpots)
       .filter((a) => a.affected_spot_ids.length > 0);
     const alertHtml = hits.length === 0 ? "" : `<div class="alertbox">
@@ -461,11 +595,15 @@ function runPlan() {
       <div class="ameta">${ALERTS_DEMO ? t.alertsDemo + " ・ " : ""}${t.alertsSource}</div>
     </div>`;
     const head = r.reduction_pct > 0 ? t.reduction(r.reduction_pct) : t.noBaseline;
-    el.innerHTML = alertHtml + `<div class="reduction">${head}</div>` + r.legs.map((l, i) => {
+    const customIds = new Set(CUSTOM_SPOTS.map((c) => c.id));
+    const hasCustom = r.legs.some((l) => customIds.has(l.spot_id));
+    const approxNote = hasCustom ? `<div class="notice">${t.approxWarn}</div>` : "";
+    el.innerHTML = alertHtml + `<div class="reduction">${head}</div>` + approxNote + r.legs.map((l, i) => {
       const name = lang === "ja" ? l.name_ja : l.name_en;
       const lvlIdx = l.crowd_pct < 30 ? 0 : l.crowd_pct < 55 ? 1 : l.crowd_pct < 80 ? 2 : 3;
       const chain = i > 0 ? routeChain(r.legs[i - 1].spot_id, l.spot_id, r.day_type) : "";
-      const travel = i > 0 ? `<div class="travel">${t.travel(l.travel_min)}${
+      const isApprox = i > 0 && (customIds.has(l.spot_id) || customIds.has(r.legs[i - 1].spot_id));
+      const travel = i > 0 ? `<div class="travel">${t.travel(l.travel_min)}${isApprox ? " " + t.approx : ""}${
         chain ? `<br><span class="rtchain">${chain}</span>` : ""}</div>` : "";
       return `${travel}<div class="leg">
         <span class="time">${l.arrive}–${l.depart}</span>
@@ -488,6 +626,11 @@ document.getElementById("langBtn").addEventListener("click", () => {
 });
 document.getElementById("dayType").addEventListener("change", render);
 document.getElementById("planBtn").addEventListener("click", runPlan);
+document.getElementById("clearBtn").addEventListener("click", () => {
+  selected.clear();
+  document.querySelectorAll("#spots input[type=checkbox]").forEach((cb) => { cb.checked = false; });
+  updatePlanner();
+});
 init();
 </script>
 </body>
