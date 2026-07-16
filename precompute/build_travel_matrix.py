@@ -6,6 +6,10 @@ M3-後半: スポット×スポットの所要時間行列を事前計算する
 出力:  webapp/data/travel_matrix.json
         {"spot_ids": [...], "weekday": [[分]], "holiday": [[分]]}
         (行=出発スポット、列=到着スポット。-1は到達不能)
+      webapp/data/travel_routes.json … 各ペアの代表経路(乗る路線の案内)
+        {"spot_ids": [...], "weekday": [[経路]], "holiday": [[経路]]}
+        経路 = null(到達不能) | [](徒歩のみ) |
+               [{"line": "TokyoMetro.Ginza", "from": [ja, en], "to": [ja, en]}, ...]
 
 計算方法:
   各スポットの徒歩圏(1200m)の駅を入口にして、RAPTORで全駅への最早到着を計算。
@@ -20,12 +24,13 @@ import pickle
 from math import asin, cos, radians, sin, sqrt
 from pathlib import Path
 
-from transit_core import raptor_search
+from transit_core import raptor_search, reconstruct_path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPOTS_CSV = ROOT / "data" / "spots.csv"
 NET_PKL = ROOT / "data" / "network_tokyo.pkl"
 OUT_JSON = ROOT / "webapp" / "data" / "travel_matrix.json"
+OUT_ROUTES_JSON = ROOT / "webapp" / "data" / "travel_routes.json"
 
 # --- パラメータ(観光客の徒歩を想定) ---
 WALK_SPEED_M_PER_MIN = 75   # 観光客の歩行速度
@@ -45,6 +50,29 @@ def haversine_m(lat1, lon1, lat2, lon2):
 
 def walk_min(dist_m):
     return dist_m * WALK_DETOUR / WALK_SPEED_M_PER_MIN
+
+
+def summarize_route(legs, stops):
+    """reconstruct_pathの結果(Legの列)を、画面に出せる「乗る路線の案内」に要約する。
+    徒歩区間は省き、乗車区間だけを乗車順に並べる。RAPTORのラウンド跨ぎ等で
+    同じ路線に連続して乗っている場合は1区間にまとめる"""
+    def names(sid):
+        st = stops.get(sid, {})
+        return [st.get("name", sid), st.get("name_en", "")]
+
+    rides = []
+    for leg in legs:
+        if leg.kind != "ride":
+            continue
+        if rides and rides[-1]["line"] == leg.route_name and rides[-1]["_to_sid"] == leg.from_stop:
+            rides[-1]["to"] = names(leg.to_stop)
+            rides[-1]["_to_sid"] = leg.to_stop
+        else:
+            rides.append({"line": leg.route_name, "from": names(leg.from_stop),
+                          "to": names(leg.to_stop), "_to_sid": leg.to_stop})
+    for r in rides:
+        del r["_to_sid"]
+    return rides
 
 
 def main():
@@ -68,41 +96,55 @@ def main():
     ids = [s["id"] for s in spots]
     result = {"spot_ids": ids, "generated_note":
               "5社(メトロ・都営・りんかい・東武・京王)の列車時刻表による。JR東日本・京成・ゆりかもめ非対応(2026-07-16時点の提供状況)"}
+    routes_result = {"spot_ids": ids, "generated_note":
+                     "各ペアの代表経路(10時台出発・最速だった便の乗車路線)。null=到達不能、[]=徒歩のみ"}
     for cal, network in networks.items():
         n = len(spots)
         matrix = [[-1] * n for _ in range(n)]
+        routes = [[None] * n for _ in range(n)]
         for i, s in enumerate(spots):
-            best = {}  # 到着スポットj → 最小所要分
+            best = {}  # 到着スポットj → (最小所要分, t0, 出口駅sid)。徒歩のみはsid=None
+            res_by_t0 = {}
             for t0 in DEPART_TIMES:
                 initial = {sid: t0 + round(w) for sid, w in entries[s["id"]]}
                 if not initial:
                     continue
                 res = raptor_search(network, initial, max_transfers=MAX_TRANSFERS)
+                res_by_t0[t0] = res
                 for j, s2 in enumerate(spots):
                     if i == j:
                         continue
                     for sid, w in entries[s2["id"]]:
                         if sid in res:
                             total = res[sid]["arrival"] + round(w) - t0
-                            if total < best.get(j, 10 ** 9):
-                                best[j] = total
+                            if total < best.get(j, (10 ** 9,))[0]:
+                                best[j] = (total, t0, sid)
             # スポット間の直接徒歩
             for j, s2 in enumerate(spots):
                 if i == j:
                     continue
                 wm = walk_min(haversine_m(float(s["lat"]), float(s["lon"]),
                                           float(s2["lat"]), float(s2["lon"])))
-                if wm <= MAX_SPOT_WALK_MIN and wm < best.get(j, 10 ** 9):
-                    best[j] = round(wm)
-            for j, v in best.items():
+                if wm <= MAX_SPOT_WALK_MIN and wm < best.get(j, (10 ** 9,))[0]:
+                    best[j] = (round(wm), None, None)
+            for j, (v, t0, sid) in best.items():
                 matrix[i][j] = round(v)
+                if sid is None:
+                    routes[i][j] = []  # 徒歩のみ
+                else:
+                    legs = reconstruct_path(res_by_t0[t0], sid)
+                    routes[i][j] = summarize_route(legs, network.stops)
         result[cal] = matrix
+        routes_result[cal] = routes
         reachable = sum(1 for row in matrix for v in row if v >= 0)
         print(f"{cal}: 到達可能ペア {reachable}/{len(spots) * (len(spots) - 1)}")
 
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False)
     print(f"出力: {OUT_JSON}")
+    with open(OUT_ROUTES_JSON, "w", encoding="utf-8") as f:
+        json.dump(routes_result, f, ensure_ascii=False)
+    print(f"出力: {OUT_ROUTES_JSON}")
 
     # --- 検証: 代表ペアの所要時間を表示(NAVITIME等と目視比較する) ---
     print("\n=== 代表ペアの所要時間(平日・10時台出発・徒歩込み) ===")
@@ -112,8 +154,14 @@ def main():
     wk = result["weekday"]
     name = {s["id"]: s["name_ja"] for s in spots}
     for a, b in checks:
+        if a not in ids or b not in ids:  # 合成データでのテスト実行時はスキップ
+            continue
         ia, ib = ids.index(a), ids.index(b)
-        print(f"  {name[a]} → {name[b]}: {wk[ia][ib]}分")
+        route = routes_result["weekday"][ia][ib]
+        via = "徒歩のみ" if route == [] else (
+            " → ".join(f"{r['line']}({r['from'][0]}→{r['to'][0]})" for r in route)
+            if route else "経路なし")
+        print(f"  {name[a]} → {name[b]}: {wk[ia][ib]}分 [{via}]")
 
 
 if __name__ == "__main__":

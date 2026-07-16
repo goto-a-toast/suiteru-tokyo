@@ -63,7 +63,8 @@
   .leg { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line);
          border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; flex-wrap: wrap; }
   .leg .time { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 100px; }
-  .leg .travel { font-size: .75rem; color: var(--ink-2); margin: 2px 0 6px 14px; }
+  .travel { font-size: .75rem; color: var(--ink-2); margin: 2px 0 6px 14px; }
+  .rtchain { color: var(--accent); }
   .crowdchip { font-size: .75rem; border-radius: 999px; padding: 2px 10px; color: #fff; }
   .err { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 14px; }
   /* M6: 運行情報アラート */
@@ -155,6 +156,7 @@ const I18N = {
     reduction: (p) => `そのまま回るより混雑を <b>${p}%</b> 減らせる行程が見つかりました`,
     noBaseline: "混雑ピークを避けた行程です",
     travel: (m) => `↓ 移動 約${m}分(公共交通+徒歩)`,
+    walkOnly: "徒歩",
     stay: "滞在", crowd: "混雑",
     alertsTitle: "🚧 運行情報(リアルタイム)",
     alertsDemo: "保存済みサンプルのリプレイ表示です(実際の運行情報ではありません)",
@@ -165,7 +167,7 @@ const I18N = {
       <a href="https://ckan.odpt.org/">公共交通オープンデータセンター</a>および公共交通オープンデータチャレンジ2026限定データ
       (東京メトロ・都営交通・りんかい線・東武・京王・ゆりかもめの列車時刻表)。<br>
       時間帯カーブは観光地タイプ別の推定テンプレート(v0)です。JR東日本・京成の時刻表データは未提供のため、
-      高尾山・柴又は混雑予報のみ対応です。所要時間は10時台出発の代表値です。<br>
+      高尾山・柴又は混雑予報のみ対応です。所要時間・乗車路線は10時台出発の代表値です。<br>
       公共交通オープンデータチャレンジ2026 応募作品(開発中) /
       <a href="https://github.com/goto-a-toast/suiteru-tokyo">GitHub</a>`,
     errUnreachable: "経路データ未提供のスポットが含まれています: ",
@@ -183,6 +185,7 @@ const I18N = {
     reduction: (p) => `Found an itinerary with <b>${p}%</b> less crowding than visiting in your original order`,
     noBaseline: "An itinerary that avoids the crowd peaks",
     travel: (m) => `↓ approx. ${m} min by transit + walk`,
+    walkOnly: "Walk",
     stay: "Stay", crowd: "Crowd",
     alertsTitle: "🚧 Service alerts (real-time)",
     alertsDemo: "Replaying a saved sample response (not live data)",
@@ -193,7 +196,7 @@ const I18N = {
       <a href="https://ckan.odpt.org/">Public Transportation Open Data Center</a> and Challenge 2026 limited data
       (train timetables of Tokyo Metro, Toei, Rinkai Line, Tobu, Keio, Yurikamome).<br>
       Hourly curves are type-based estimate templates (v0). JR East and Keisei timetables are not published as open data,
-      so Mt. Takao and Shibamata are forecast-only. Travel times are representative values departing around 10:00.<br>
+      so Mt. Takao and Shibamata are forecast-only. Travel times and train lines are representative values departing around 10:00.<br>
       An entry (work in progress) for the Public Transportation Open Data Challenge 2026 /
       <a href="https://github.com/goto-a-toast/suiteru-tokyo">GitHub</a>`,
     errUnreachable: "These spots have no route data: ",
@@ -209,7 +212,7 @@ const CATEGORY_EN = {
 const categoryLabel = (c) => (lang === "ja" ? c : CATEGORY_EN[c] || c);
 
 /* ---------------- データ読み込み ---------------- */
-let PROFILES = null, MATRIX = null;
+let PROFILES = null, MATRIX = null, ROUTES = null;
 let ALERTS = [];           // 正規化済み運行情報(平常運転も含む生の一覧)
 let ALERTS_DEMO = false;   // リプレイ表示中か(UIに明示する)
 const selected = new Set();
@@ -267,6 +270,11 @@ async function init() {
     fetch("data/travel_matrix.json").then((r) => r.json()),
   ]);
   PROFILES = p; MATRIX = m;
+  // 路線案内(任意データ)。precompute再実行前のデプロイには無いので、無ければ黙って非表示
+  fetch("data/travel_routes.json")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { ROUTES = j; })
+    .catch(() => {});
   loadAlerts(); // 待たない: 運行情報が遅くても本体の描画を止めない
   const monthSel = document.getElementById("month");
   const now = new Date().getMonth();
@@ -402,6 +410,25 @@ function renderItineraryMap(legs) {
   MAP.fitBounds(L.latLngBounds(pts.map((p) => p.ll)), { padding: [36, 36] });
 }
 
+/* ---------------- 路線案内(任意データ) ---------------- */
+/* 移動区間 a→b の乗車路線チェーンを整形する。データが無ければ""(従来表示のまま) */
+function routeChain(a, b, dayType) {
+  if (!ROUTES || !ROUTES[dayType]) return "";
+  const t = I18N[lang];
+  const ia = ROUTES.spot_ids.indexOf(a), ib = ROUTES.spot_ids.indexOf(b);
+  if (ia < 0 || ib < 0) return "";
+  const route = ROUTES[dayType][ia][ib];
+  if (route === null || route === undefined) return "";
+  if (route.length === 0) return `🚶 ${t.walkOnly}`;
+  return "🚇 " + route.map((r) => {
+    const names = typeof RAILWAY_NAMES !== "undefined" && RAILWAY_NAMES[r.line];
+    const line = names ? names[lang === "ja" ? "ja" : "en"] : r.line;
+    const from = lang === "ja" ? r.from[0] : r.from[1] || r.from[0];
+    const to = lang === "ja" ? r.to[0] : r.to[1] || r.to[0];
+    return `${line} (${from}→${to})`;
+  }).join(" → ");
+}
+
 /* ---------------- 行程計算 ---------------- */
 function runPlan() {
   const t = I18N[lang];
@@ -437,7 +464,9 @@ function runPlan() {
     el.innerHTML = alertHtml + `<div class="reduction">${head}</div>` + r.legs.map((l, i) => {
       const name = lang === "ja" ? l.name_ja : l.name_en;
       const lvlIdx = l.crowd_pct < 30 ? 0 : l.crowd_pct < 55 ? 1 : l.crowd_pct < 80 ? 2 : 3;
-      const travel = i > 0 ? `<div class="travel">${t.travel(l.travel_min)}</div>` : "";
+      const chain = i > 0 ? routeChain(r.legs[i - 1].spot_id, l.spot_id, r.day_type) : "";
+      const travel = i > 0 ? `<div class="travel">${t.travel(l.travel_min)}${
+        chain ? `<br><span class="rtchain">${chain}</span>` : ""}</div>` : "";
       return `${travel}<div class="leg">
         <span class="time">${l.arrive}–${l.depart}</span>
         <span>${name}</span>
