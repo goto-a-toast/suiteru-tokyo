@@ -30,10 +30,13 @@
 - [x] M5: 静的Webフロント(日英) — webapp/index.html。スポット別「すいてる時間」ヒートマップ+
       行程ビルダー。GitHub Actionsで自動デプロイ(https://goto-a-toast.github.io/suiteru-tokyo/)
 - **Stage 1(応募可能な最小構成)ここまで完成。以下はStage 2(余力があれば)**
-- [ ] M6: Worker+運行情報リアルタイムアラート
+- [x] M6: Worker+運行情報リアルタイムアラート — コード完成・リプレイ検証済み(2026-07-16)。
+      worker/にODPT中継Worker(キー秘匿・60秒キャッシュ)、フロントは行程の利用路線に
+      異常があれば警告(transit_alerts.js・単体テスト11件合格)。Worker未設定/不達なら
+      表示ごと消えるだけでStage 1は無傷。`?demo=alerts`で保存サンプルをリプレイ確認できる。
+      ※Cloudflareへの実デプロイは未実施(手順: worker/README.md)
 - [ ] M7: LLMコンシェルジュ
 - [ ] M8: 応募材料の最終化(カーブv1化・デモ動画・応募文面)
-- [ ] M6〜M8: Stage 2(Worker+運行情報+LLMコンシェルジュ・余力があれば)
 
 ## 正直さについて(方針)
 

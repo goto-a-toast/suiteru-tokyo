@@ -1,0 +1,47 @@
+{
+  "fetched_at": "2026-07-16T09:00:00+09:00",
+  "note": "リプレイ検証用の保存サンプル(index.html?demo=alerts で読み込まれる)。Workerの応答と同じ形。実データではない。",
+  "alerts": [
+    {
+      "operator": "TokyoMetro",
+      "railway": "TokyoMetro.Ginza",
+      "status": { "ja": "遅延", "en": "Delay" },
+      "text": {
+        "ja": "銀座線は、上野駅での車内点検の影響で、一部列車に10分程度の遅れが出ています。",
+        "en": "Ginza Line trains are delayed by up to 10 minutes due to an in-car inspection at Ueno Station."
+      },
+      "date": "2026-07-16T08:55:00+09:00"
+    },
+    {
+      "operator": "Toei",
+      "railway": "Toei.Oedo",
+      "status": { "ja": "運転見合わせ", "en": "Operation suspended" },
+      "text": {
+        "ja": "大江戸線は、信号確認の影響で、都庁前〜門前仲町駅間の運転を見合わせています。",
+        "en": "Toei Oedo Line service is suspended between Tochomae and Monzen-Nakacho due to a signal check."
+      },
+      "date": "2026-07-16T08:40:00+09:00"
+    },
+    {
+      "operator": "TokyoMetro",
+      "railway": "TokyoMetro.Tozai",
+      "status": null,
+      "text": {
+        "ja": "現在、平常どおり運転しています。",
+        "en": "Trains are operating on schedule."
+      },
+      "date": "2026-07-16T08:55:00+09:00"
+    },
+    {
+      "operator": "Tobu",
+      "railway": "Tobu.TobuSkytree",
+      "status": { "ja": "遅延", "en": "Delay" },
+      "text": {
+        "ja": "東武スカイツリーラインは、踏切安全確認の影響で、上下線の一部列車に遅れが出ています。",
+        "en": "Tobu Skytree Line trains are partially delayed due to a safety check at a railroad crossing."
+      },
+      "date": "2026-07-16T08:50:00+09:00"
+    }
+  ],
+  "errors": []
+}

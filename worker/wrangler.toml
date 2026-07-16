@@ -1,0 +1,8 @@
+# Cloudflare Workerの設定。デプロイ手順は README.md を参照
+name = "suiteru-train-info"
+main = "train_info_worker.js"
+compatibility_date = "2026-07-01"
+
+# APIキーはこのファイルには書かない。以下で登録する:
+#   wrangler secret put ODPT_TOKEN            … センター(api.odpt.org)のトークン
+#   wrangler secret put ODPT_CHALLENGE_TOKEN  … チャレンジ2026専用トークン
