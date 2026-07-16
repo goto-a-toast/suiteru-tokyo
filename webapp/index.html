@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>すいてる東京 | Suiteru Tokyo</title>
+<style>
+  :root {
+    --ink: #1f2937; --ink-2: #6b7280; --line: #e5e7eb;
+    --bg: #f8fafc; --card: #ffffff; --accent: #0f766e; --accent-ink: #ffffff;
+    /* 混雑のシーケンシャル配色(単一色相・薄→濃)。数値はセルのツールチップでも示す */
+    --crowd-0: #fff7ed; --crowd-1: #fed7aa; --crowd-2: #fdba74;
+    --crowd-3: #fb923c; --crowd-4: #ea580c; --crowd-5: #9a3412;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+         color: var(--ink); background: var(--bg); line-height: 1.55; }
+  header { background: var(--accent); color: var(--accent-ink); padding: 14px 16px; }
+  .hrow { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  .tagline { font-size: .85rem; opacity: .92; }
+  .spacer { flex: 1; }
+  .lang-btn { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.5);
+              border-radius: 999px; padding: 4px 14px; cursor: pointer; font-size: .85rem; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .notice { font-size: .8rem; color: var(--ink-2); background: #fffbeb; border: 1px solid #fde68a;
+            border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .controls label { font-size: .85rem; color: var(--ink-2); }
+  select, input[type="time"] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+            background: var(--card); font-size: .9rem; color: var(--ink); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card h3 { margin: 0 0 2px; font-size: 1rem; display: flex; gap: 8px; align-items: center; }
+  .card .sub { font-size: .78rem; color: var(--ink-2); margin-bottom: 8px; }
+  .chip { font-size: .7rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--ink-2); }
+  .heat { display: grid; grid-template-columns: repeat(18, 1fr); gap: 2px; margin: 6px 0 2px; }
+  .heat .cell { height: 22px; border-radius: 3px; position: relative; }
+  .heat .cell.closed { background: repeating-linear-gradient(45deg, #f1f5f9, #f1f5f9 3px, #e2e8f0 3px, #e2e8f0 6px); }
+  .hlabels { display: grid; grid-template-columns: repeat(18, 1fr); font-size: .6rem; color: var(--ink-2); }
+  .hlabels span:nth-child(3n+2) { visibility: hidden; }
+  .hlabels span:nth-child(3n) { visibility: hidden; }
+  .besttime { font-size: .8rem; margin-top: 6px; }
+  .besttime b { color: var(--accent); }
+  .noroute { font-size: .72rem; color: #b45309; }
+  .pick { margin-top: 8px; }
+  .pick label { font-size: .85rem; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+  /* 行程ビルダー */
+  #planner { position: sticky; bottom: 0; background: var(--card); border-top: 2px solid var(--accent);
+             padding: 10px 16px; box-shadow: 0 -4px 12px rgba(0,0,0,.06); }
+  .prow { max-width: 1100px; margin: 0 auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  #selcount { font-size: .85rem; color: var(--ink-2); }
+  #planBtn { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+             padding: 9px 22px; font-size: .95rem; cursor: pointer; }
+  #planBtn:disabled { background: #9ca3af; cursor: not-allowed; }
+  /* 結果 */
+  #result { max-width: 1100px; margin: 14px auto; }
+  .reduction { font-size: 1.05rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px;
+               padding: 10px 14px; margin-bottom: 10px; }
+  .reduction b { color: #047857; font-size: 1.3rem; }
+  .leg { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line);
+         border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; flex-wrap: wrap; }
+  .leg .time { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 100px; }
+  .leg .travel { font-size: .75rem; color: var(--ink-2); margin: 2px 0 6px 14px; }
+  .crowdchip { font-size: .75rem; border-radius: 999px; padding: 2px 10px; color: #fff; }
+  .err { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 14px; }
+  footer { max-width: 1100px; margin: 24px auto 90px; padding: 0 16px; font-size: .75rem; color: var(--ink-2); }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <h1 id="t-title">すいてる東京</h1>
+    <span class="tagline" id="t-tagline">「いつ行くか」を変えるだけで、東京はすいてる。</span>
+    <span class="spacer"></span>
+    <button class="lang-btn" id="langBtn">English</button>
+  </div>
+</header>
+
+<main>
+  <p class="notice" id="t-notice">
+    ここに表示する混雑は、統計(国交省 人流オープンデータ2019年ほか)と公表資料に基づく<b>予報</b>であり、
+    リアルタイムの実測ではありません。
+  </p>
+
+  <div class="controls">
+    <label id="t-day">曜日タイプ</label>
+    <select id="dayType">
+      <option value="weekday">平日 / Weekday</option>
+      <option value="holiday">土休日 / Weekend & Holiday</option>
+    </select>
+    <label id="t-start">開始</label><input type="time" id="startTime" value="08:00">
+    <label id="t-end">終了</label><input type="time" id="endTime" value="20:00">
+    <label id="t-month">月</label>
+    <select id="month"></select>
+  </div>
+
+  <div class="grid" id="spots"></div>
+  <div id="result"></div>
+</main>
+
+<div id="planner">
+  <div class="prow">
+    <span id="selcount"></span>
+    <span class="spacer"></span>
+    <button id="planBtn" disabled></button>
+  </div>
+</div>
+
+<footer id="t-footer"></footer>
+
+<script src="js/plan_itinerary.js"></script>
+<script>
+"use strict";
+
+/* ---------------- 多言語 ---------------- */
+const I18N = {
+  ja: {
+    tagline: "「いつ行くか」を変えるだけで、東京はすいてる。",
+    notice: "ここに表示する混雑は、統計(国交省 人流オープンデータ2019年ほか)と公表資料に基づく<b>予報</b>であり、リアルタイムの実測ではありません。",
+    day: "曜日タイプ", start: "開始", end: "終了", month: "月",
+    monthNames: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"],
+    besttime: "おすすめの時間帯: ", crowdlevel: ["すいてる","やや混雑","混雑","かなり混雑"],
+    noroute: "⚠ 経路データ未提供(行程には追加できません)",
+    select: "行程に追加",
+    selcount: (n) => `${n} / 6 箇所を選択中(2箇所以上で計算できます)`,
+    plan: "すいてる順に行程を組む",
+    reduction: (p) => `そのまま回るより混雑を <b>${p}%</b> 減らせる行程が見つかりました`,
+    noBaseline: "混雑ピークを避けた行程です",
+    travel: (m) => `↓ 移動 約${m}分(公共交通+徒歩)`,
+    stay: "滞在", crowd: "混雑",
+    footer: `出典: <a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto">国土交通省 全国の人流オープンデータ</a>(2019年・1kmメッシュ)、
+      <a href="https://ckan.odpt.org/">公共交通オープンデータセンター</a>および公共交通オープンデータチャレンジ2026限定データ
+      (東京メトロ・都営交通・りんかい線・東武・京王・ゆりかもめの列車時刻表)。<br>
+      時間帯カーブは観光地タイプ別の推定テンプレート(v0)です。JR東日本・京成の時刻表データは未提供のため、
+      高尾山・柴又は混雑予報のみ対応です。所要時間は10時台出発の代表値です。<br>
+      公共交通オープンデータチャレンジ2026 応募作品(開発中) /
+      <a href="https://github.com/goto-a-toast/suiteru-tokyo">GitHub</a>`,
+    errUnreachable: "経路データ未提供のスポットが含まれています: ",
+  },
+  en: {
+    tagline: "Tokyo is uncrowded — if you change when you go.",
+    notice: "Crowd levels shown here are <b>forecasts</b> based on statistics (MLIT people-flow open data 2019, etc.) and published sources — not real-time measurements.",
+    day: "Day type", start: "Start", end: "End", month: "Month",
+    monthNames: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+    besttime: "Best time to visit: ", crowdlevel: ["Quiet","Moderate","Crowded","Very crowded"],
+    noroute: "⚠ No route data (cannot add to itinerary)",
+    select: "Add to itinerary",
+    selcount: (n) => `${n} / 6 spots selected (need at least 2)`,
+    plan: "Plan my uncrowded day",
+    reduction: (p) => `Found an itinerary with <b>${p}%</b> less crowding than visiting in your original order`,
+    noBaseline: "An itinerary that avoids the crowd peaks",
+    travel: (m) => `↓ approx. ${m} min by transit + walk`,
+    stay: "Stay", crowd: "Crowd",
+    footer: `Sources: <a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto">MLIT nationwide people-flow open data</a> (2019, 1km mesh),
+      <a href="https://ckan.odpt.org/">Public Transportation Open Data Center</a> and Challenge 2026 limited data
+      (train timetables of Tokyo Metro, Toei, Rinkai Line, Tobu, Keio, Yurikamome).<br>
+      Hourly curves are type-based estimate templates (v0). JR East and Keisei timetables are not published as open data,
+      so Mt. Takao and Shibamata are forecast-only. Travel times are representative values departing around 10:00.<br>
+      An entry (work in progress) for the Public Transportation Open Data Challenge 2026 /
+      <a href="https://github.com/goto-a-toast/suiteru-tokyo">GitHub</a>`,
+    errUnreachable: "These spots have no route data: ",
+  },
+};
+let lang = "ja";
+
+const CATEGORY_EN = {
+  "寺社": "Temple/Shrine", "市場": "Market", "公園庭園": "Park/Garden",
+  "商店街": "Shopping street", "繁華街": "Downtown", "展望施設": "Observatory",
+  "アトラクション": "Attraction", "建築観光": "Architecture", "自然": "Nature",
+};
+const categoryLabel = (c) => (lang === "ja" ? c : CATEGORY_EN[c] || c);
+
+/* ---------------- データ読み込み ---------------- */
+let PROFILES = null, MATRIX = null;
+const selected = new Set();
+
+async function init() {
+  const [p, m] = await Promise.all([
+    fetch("data/crowd_profiles.json").then((r) => r.json()),
+    fetch("data/travel_matrix.json").then((r) => r.json()),
+  ]);
+  PROFILES = p; MATRIX = m;
+  const monthSel = document.getElementById("month");
+  const now = new Date().getMonth();
+  I18N[lang].monthNames.forEach((n, i) => {
+    const o = document.createElement("option");
+    o.value = i + 1; o.textContent = n; if (i === now) o.selected = true;
+    monthSel.appendChild(o);
+  });
+  render();
+}
+
+/* スポットが行程対象か(経路データがあるか) */
+function hasRoute(id) {
+  const i = MATRIX.spot_ids.indexOf(id);
+  return MATRIX.weekday[i].some((v) => v >= 0);
+}
+
+function crowdColor(v) {
+  const s = getComputedStyle(document.documentElement);
+  if (v < 15) return s.getPropertyValue("--crowd-0");
+  if (v < 30) return s.getPropertyValue("--crowd-1");
+  if (v < 50) return s.getPropertyValue("--crowd-2");
+  if (v < 70) return s.getPropertyValue("--crowd-3");
+  if (v < 88) return s.getPropertyValue("--crowd-4");
+  return s.getPropertyValue("--crowd-5");
+}
+
+/* 訪問可能時間帯の中で最も空いている連続2時間を探す */
+function bestWindow(spot) {
+  const [o, c] = spot.visit_window;
+  let best = null;
+  for (let h = o; h <= c - 2; h++) {
+    const v = (spot.hourly_shape[h] + spot.hourly_shape[h + 1]) / 2;
+    if (!best || v < best.v) best = { h, v };
+  }
+  return best;
+}
+
+/* ---------------- 描画 ---------------- */
+function render() {
+  const t = I18N[lang];
+  document.getElementById("t-tagline").textContent = t.tagline;
+  document.getElementById("t-notice").innerHTML = t.notice;
+  document.getElementById("t-day").textContent = t.day;
+  document.getElementById("t-start").textContent = t.start;
+  document.getElementById("t-end").textContent = t.end;
+  document.getElementById("t-month").textContent = t.month;
+  document.getElementById("t-footer").innerHTML = t.footer;
+  document.getElementById("langBtn").textContent = lang === "ja" ? "English" : "日本語";
+  Array.from(document.getElementById("month").options).forEach((o, i) => o.textContent = t.monthNames[i]);
+
+  const wrap = document.getElementById("spots");
+  wrap.innerHTML = "";
+  const HOURS = Array.from({ length: 18 }, (_, i) => i + 5); // 5時〜22時を表示
+  for (const s of PROFILES.spots) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const name = lang === "ja" ? s.name_ja : s.name_en;
+    const bw = bestWindow(s);
+    const routed = hasRoute(s.id);
+    const lvl = s.level[document.getElementById("dayType").value];
+    const heat = HOURS.map((h) => {
+      const [o, c] = s.visit_window;
+      const closed = h < o || h >= c;
+      const v = s.hourly_shape[h];
+      const tip = `${h}:00 — ${closed ? (lang === "ja" ? "時間外" : "closed") : v}`;
+      return `<div class="cell ${closed ? "closed" : ""}" title="${tip}"
+        style="${closed ? "" : `background:${crowdColor(v)}`}"></div>`;
+    }).join("");
+    card.innerHTML = `
+      <h3>${name} <span class="chip">${categoryLabel(s.category)}</span></h3>
+      <div class="sub">${lang === "ja" ? s.name_en : s.name_ja} ・ ${t.crowd}Lv ${lvl}</div>
+      <div class="heat">${heat}</div>
+      <div class="hlabels">${HOURS.map((h) => `<span>${h}</span>`).join("")}</div>
+      <div class="besttime">${t.besttime}<b>${bw.h}:00–${bw.h + 2}:00</b></div>
+      <div class="pick">${routed
+        ? `<label><input type="checkbox" data-id="${s.id}" ${selected.has(s.id) ? "checked" : ""}> ${t.select}</label>`
+        : `<span class="noroute">${t.noroute}</span>`}</div>`;
+    wrap.appendChild(card);
+  }
+  wrap.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) {
+        if (selected.size >= 6) { cb.checked = false; return; }
+        selected.add(cb.dataset.id);
+      } else selected.delete(cb.dataset.id);
+      updatePlanner();
+    });
+  });
+  updatePlanner();
+}
+
+function updatePlanner() {
+  const t = I18N[lang];
+  document.getElementById("selcount").textContent = t.selcount(selected.size);
+  const btn = document.getElementById("planBtn");
+  btn.textContent = t.plan;
+  btn.disabled = selected.size < 2;
+}
+
+/* ---------------- 行程計算 ---------------- */
+function runPlan() {
+  const t = I18N[lang];
+  const req = {
+    spot_ids: Array.from(selected),
+    day_type: document.getElementById("dayType").value,
+    start_time: document.getElementById("startTime").value,
+    end_time: document.getElementById("endTime").value,
+    month: Number(document.getElementById("month").value),
+  };
+  const r = planItinerary(req, { profiles: PROFILES, matrix: MATRIX });
+  const el = document.getElementById("result");
+  if (!r.ok) {
+    let msg = r.reason;
+    if (r.unreachable) {
+      const names = r.unreachable.map((id) => {
+        const s = PROFILES.spots.find((x) => x.id === id);
+        return lang === "ja" ? s.name_ja : s.name_en;
+      });
+      msg = t.errUnreachable + names.join(", ");
+    }
+    el.innerHTML = `<div class="err">${msg}</div>`;
+  } else {
+    const head = r.reduction_pct > 0 ? t.reduction(r.reduction_pct) : t.noBaseline;
+    el.innerHTML = `<div class="reduction">${head}</div>` + r.legs.map((l, i) => {
+      const name = lang === "ja" ? l.name_ja : l.name_en;
+      const lvlIdx = l.crowd_pct < 30 ? 0 : l.crowd_pct < 55 ? 1 : l.crowd_pct < 80 ? 2 : 3;
+      const travel = i > 0 ? `<div class="travel">${t.travel(l.travel_min)}</div>` : "";
+      return `${travel}<div class="leg">
+        <span class="time">${l.arrive}–${l.depart}</span>
+        <span>${name}</span>
+        <span class="spacer"></span>
+        <span class="crowdchip" style="background:${crowdColor(l.crowd_pct)}; color:${l.crowd_pct < 50 ? "#7c2d12" : "#fff"}">
+          ${t.crowd} ${l.crowd_pct} ・ ${t.crowdlevel[lvlIdx]}</span>
+      </div>`;
+    }).join("");
+  }
+  el.scrollIntoView({ behavior: "smooth" });
+}
+
+/* ---------------- イベント ---------------- */
+document.getElementById("langBtn").addEventListener("click", () => {
+  lang = lang === "ja" ? "en" : "ja";
+  document.documentElement.lang = lang;
+  render();
+});
+document.getElementById("dayType").addEventListener("change", render);
+document.getElementById("planBtn").addEventListener("click", runPlan);
+init();
+</script>
+</body>
+</html>
