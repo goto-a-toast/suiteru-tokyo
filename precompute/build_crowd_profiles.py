@@ -143,6 +143,7 @@ def main():
             "level_raw": {"weekday": round(wk), "holiday": round(hd)},
             "month_factor": month_factor,
             "hourly_shape": curve["hourly"],  # 0時〜23時の相対混雑(ピーク=100)
+            "visit_window": curve["visit_window"],  # 訪問可能時間帯 [開始時, 終了時)
         })
 
     if missing:
