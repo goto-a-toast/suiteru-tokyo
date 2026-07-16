@@ -36,11 +36,12 @@
       表示ごと消えるだけでStage 1は無傷。`?demo=alerts`で保存サンプルをリプレイ確認できる。
       ※Cloudflareへの実デプロイは未実施(手順: worker/README.md)
 - [x] 行程マップ+路線案内(2026-07-16) — 行程を地図表示(Leaflet同梱・訪問順マーカーを混雑度で
-      色分け)。移動区間の乗車路線(例: 銀座線 浅草→渋谷)は travel_routes.json から表示する。
-      **現状はプレースホルダ(全null)のため路線は出ない。** data/ にODPTデータがある環境で
+      色分け)。移動区間の乗車路線(例: 銀座線 浅草→渋谷)を travel_routes.json から表示する。
+      実データ生成済み(380/462ペア・15路線、travel_matrix.jsonは再生成前と完全一致で再現性確認)。
+      再生成手順: APIキーを data/odpt_apikey.txt(+data/odpt_challenge_apikey.txt) に置き、
       `fetch_odpt_network.py → reconstruct_yurikamome.py → build_network_tokyo.py →
-      build_travel_matrix.py` を再実行すると travel_matrix.json と一緒に生成される
-      (生成ロジックは合成ネットワークの単体テストで検証済み: test_travel_routes.py)
+      build_travel_matrix.py` の順に実行(ゆりかもめの駅時刻表取得もfetchスクリプトに組込み済み。
+      生成ロジックは合成ネットワークの単体テストでも検証: test_travel_routes.py)
 - [ ] M7: LLMコンシェルジュ
 - [ ] M8: 応募材料の最終化(カーブv1化・デモ動画・応募文面)
 
