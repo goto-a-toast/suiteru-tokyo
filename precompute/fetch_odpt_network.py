@@ -134,32 +134,70 @@ def main():
                           (timetables, "train_timetables")]
         elif op == "Yurikamome":
             # ゆりかもめは列車時刻表が未提供で駅時刻表のみ(2026-07確認)。
-            # 駅時刻表を保存し、reconstruct_yurikamome.py で列車時刻表を復元する
-            try:
-                stt = fetch(source, keys, "odpt:StationTimetable",
-                            {"odpt:operator": f"odpt.Operator:{op}"})
-            except (urllib.error.HTTPError, RuntimeError):
-                stt = []
-            # 事業者指定のodpt:Stationが全駅を返さないことがあるため、
-            # 路線のstationOrderにある駅IDを1駅ずつ引いて補完する(座標が必要)
-            station_order = railways[0].get("odpt:stationOrder", []) if railways else []
-            if len(stations) < len(station_order):
-                got = {s.get("owl:sameAs") for s in stations}
-                for o in station_order:
-                    sid = o.get("odpt:station")
-                    if not sid or sid in got:
+            # 駅時刻表を保存し、reconstruct_yurikamome.py で列車時刻表を復元する。
+            # どのエンドポイント/クエリで取れるかが不安定なので、候補を順に試して
+            # 試行ごとの結果を表示する(失敗の握りつぶしをしない)
+            op_id = f"odpt.Operator:{op}"
+
+            def try_fetch(label, src, data_type, params):
+                if src not in keys:
+                    print(f"    {label}: {src} → トークン未配置でスキップ")
+                    return None
+                try:
+                    got = fetch(src, keys, data_type, params)
+                    print(f"    {label}: {src} {params} → {len(got)}件")
+                    return got
+                except (urllib.error.HTTPError, RuntimeError) as e:
+                    print(f"    {label}: {src} {params} → 失敗({e})")
+                    return None
+                finally:
+                    time.sleep(0.6)
+
+            # 路線(stationOrderが復元に必須)。challenge側に無ければcenterも試す
+            if not (railways and railways[0].get("odpt:stationOrder")):
+                alt = try_fetch("路線(再試行)", "center", "odpt:Railway", {"odpt:operator": op_id})
+                if alt and alt[0].get("odpt:stationOrder"):
+                    railways = alt
+            rail_id = railways[0]["owl:sameAs"] if railways else None
+
+            # 駅時刻表: 事業者指定/路線指定 × challenge/center の順に試す
+            stt = []
+            for src in ("challenge", "center"):
+                for params in ({"odpt:operator": op_id},
+                               {"odpt:railway": rail_id} if rail_id else None):
+                    if params is None or stt:
                         continue
-                    try:
-                        stations += fetch(source, keys, "odpt:Station", {"owl:sameAs": sid})
-                    except (urllib.error.HTTPError, RuntimeError):
-                        pass
-                    time.sleep(0.3)
+                    got = try_fetch("駅時刻表", src, "odpt:StationTimetable", params)
+                    if got:
+                        stt = got
+
+            # 駅一覧(座標が必要)。少なすぎればcenterの事業者指定→個別IDの順で補完
+            station_order = railways[0].get("odpt:stationOrder", []) if railways else []
+            if len(stations) < max(len(station_order), 2):
+                alt = try_fetch("駅(再試行)", "center", "odpt:Station", {"odpt:operator": op_id})
+                if alt and len(alt) > len(stations):
+                    stations = alt
+            if len(stations) < len(station_order):
+                got_ids = {s.get("owl:sameAs") for s in stations}
+                missing = [o.get("odpt:station") for o in station_order
+                           if o.get("odpt:station") and o.get("odpt:station") not in got_ids]
+                added = 0
+                for sid in missing:
+                    for src in (source, "center"):
+                        rec = try_fetch(f"駅個別({sid.split('.')[-1]})", src, "odpt:Station",
+                                        {"owl:sameAs": sid})
+                        if rec:
+                            stations += rec
+                            added += 1
+                            break
+                print(f"    駅個別補完: {added}/{len(missing)}駅")
+
             if stt:
                 note = f"OK(駅{len(stations)}・駅時刻表{len(stt)}件→列車を復元する)"
                 save_files = [(stations, "stations"), (railways, "railways"),
                               (stt, "station_timetables")]
             else:
-                note = "NG(列車時刻表も駅時刻表も未提供)"
+                note = "NG(駅時刻表がどのクエリでも取得できず。上の試行ログを確認)"
         else:
             note = "NG(時刻表なし)"
         print(f"{op:<12} {source:<10} {len(stations):>5} {len(railways):>4} {len(timetables):>8}  {note}")
