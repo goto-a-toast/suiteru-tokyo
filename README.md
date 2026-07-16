@@ -35,6 +35,12 @@
       異常があれば警告(transit_alerts.js・単体テスト11件合格)。Worker未設定/不達なら
       表示ごと消えるだけでStage 1は無傷。`?demo=alerts`で保存サンプルをリプレイ確認できる。
       ※Cloudflareへの実デプロイは未実施(手順: worker/README.md)
+- [x] 行程マップ+路線案内(2026-07-16) — 行程を地図表示(Leaflet同梱・訪問順マーカーを混雑度で
+      色分け)。移動区間の乗車路線(例: 銀座線 浅草→渋谷)は travel_routes.json から表示する。
+      **現状はプレースホルダ(全null)のため路線は出ない。** data/ にODPTデータがある環境で
+      `fetch_odpt_network.py → reconstruct_yurikamome.py → build_network_tokyo.py →
+      build_travel_matrix.py` を再実行すると travel_matrix.json と一緒に生成される
+      (生成ロジックは合成ネットワークの単体テストで検証済み: test_travel_routes.py)
 - [ ] M7: LLMコンシェルジュ
 - [ ] M8: 応募材料の最終化(カーブv1化・デモ動画・応募文面)
 
