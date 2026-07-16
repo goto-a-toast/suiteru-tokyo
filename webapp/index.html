@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>すいてる東京 | Suiteru Tokyo</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍃</text></svg>">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
   :root {
     --ink: #1f2937; --ink-2: #6b7280; --line: #e5e7eb;
@@ -72,6 +73,13 @@
   .alertbox .aline { margin: 4px 0; }
   .alertbox .aline b { color: #b91c1c; }
   .alertbox .ameta { font-size: .72rem; color: var(--ink-2); margin-top: 6px; }
+  /* 行程マップ */
+  #itmap { height: 380px; border: 1px solid var(--line); border-radius: 12px; margin-top: 10px; z-index: 0; }
+  .numpin { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff;
+            box-shadow: 0 1px 4px rgba(0,0,0,.4); display: flex; align-items: center;
+            justify-content: center; font-weight: 700; font-size: .85rem; }
+  .mappopup { font-size: .85rem; }
+  .mappopup b { display: block; }
   footer { max-width: 1100px; margin: 24px auto 90px; padding: 0 16px; font-size: .75rem; color: var(--ink-2); }
   footer a { color: var(--accent); }
 </style>
@@ -122,6 +130,7 @@
 
 <script src="js/plan_itinerary.js"></script>
 <script src="js/transit_alerts.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script>
 "use strict";
 
@@ -359,6 +368,40 @@ function updatePlanner() {
   btn.disabled = selected.size < 2;
 }
 
+/* ---------------- 行程マップ ---------------- */
+let MAP = null;
+
+/* 訪問順の番号マーカー(混雑度で色分け)+経路ラインを描く。
+   Leafletが読めていなければ何もしない(従来のリスト表示だけで成立する) */
+function renderItineraryMap(legs) {
+  if (typeof L === "undefined" || !document.getElementById("itmap")) return;
+  if (MAP) { MAP.remove(); MAP = null; }
+  MAP = L.map("itmap", { scrollWheelZoom: false });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(MAP);
+  const t = I18N[lang];
+  const pts = legs.map((l) => {
+    const s = PROFILES.spots.find((x) => x.id === l.spot_id);
+    return { l, s, ll: [s.lat, s.lon] };
+  });
+  L.polyline(pts.map((p) => p.ll), { color: "#0f766e", weight: 3, dashArray: "6 8", opacity: .8 }).addTo(MAP);
+  pts.forEach((p, i) => {
+    const bg = crowdColor(p.l.crowd_pct);
+    const fg = p.l.crowd_pct < 50 ? "#7c2d12" : "#fff";
+    const icon = L.divIcon({
+      className: "", iconSize: [28, 28], iconAnchor: [14, 14],
+      html: `<div class="numpin" style="background:${bg}; color:${fg}">${i + 1}</div>`,
+    });
+    const name = lang === "ja" ? p.s.name_ja : p.s.name_en;
+    L.marker(p.ll, { icon }).addTo(MAP).bindPopup(
+      `<div class="mappopup"><b>${i + 1}. ${name}</b>` +
+      `${p.l.arrive}–${p.l.depart} ・ ${t.crowd} ${p.l.crowd_pct}</div>`);
+  });
+  MAP.fitBounds(L.latLngBounds(pts.map((p) => p.ll)), { padding: [36, 36] });
+}
+
 /* ---------------- 行程計算 ---------------- */
 function runPlan() {
   const t = I18N[lang];
@@ -402,7 +445,8 @@ function runPlan() {
         <span class="crowdchip" style="background:${crowdColor(l.crowd_pct)}; color:${l.crowd_pct < 50 ? "#7c2d12" : "#fff"}">
           ${t.crowd} ${l.crowd_pct} ・ ${t.crowdlevel[lvlIdx]}</span>
       </div>`;
-    }).join("");
+    }).join("") + `<div id="itmap"></div>`;
+    renderItineraryMap(r.legs);
   }
   el.scrollIntoView({ behavior: "smooth" });
 }
