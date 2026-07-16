@@ -196,6 +196,7 @@ const I18N = {
     addNeedInput: "名前の入力と地図での場所指定をしてください",
     customChip: "追加スポット",
     customNote: "混雑はテンプレート・所要時間は概算",
+    customNoteMesh: "レベルは人流実データ・カーブはテンプレート",
     remove: "削除",
     approx: "(概算)",
     approxWarn: "⚠ 追加スポットを含む移動時間は概算です(最寄りスポット経由+徒歩で推定)",
@@ -236,6 +237,7 @@ const I18N = {
     addNeedInput: "Enter a name and pick a location on the map",
     customChip: "Your spot",
     customNote: "Crowd: template ・ travel: estimate",
+    customNoteMesh: "Level: real people-flow data ・ curve: template",
     remove: "Remove",
     approx: "(approx.)",
     approxWarn: "⚠ Travel times involving your own spots are rough estimates (via the nearest listed spot + walking)",
@@ -265,7 +267,9 @@ const categoryLabel = (c) => (lang === "ja" ? c : CATEGORY_EN[c] || c);
 
 /* ---------------- データ読み込み ---------------- */
 let PROFILES = null, MATRIX = null, ROUTES = null;
-let EXT = null;  // 公式+ユーザー追加スポットを合成した {profiles, matrix}
+let MESH_LEVELS = null;     // 人流実データの全メッシュ混雑レベル(任意データ)
+let STATION_TABLES = null;  // 公式スポット⇔全駅の所要時間+経路表(任意データ)
+let EXT = null;  // 公式+ユーザー追加スポットを合成した {profiles, matrix, customRoutes, approx}
 
 /* ユーザー追加スポット(この端末のlocalStorageに保存) */
 const CUSTOM_KEY = "suiteru_custom_spots";
@@ -273,7 +277,8 @@ let CUSTOM_SPOTS = [];
 try { CUSTOM_SPOTS = JSON.parse(localStorage.getItem(CUSTOM_KEY)) || []; } catch (e) {}
 
 function refreshExt() {
-  EXT = buildExtendedData(PROFILES, MATRIX, CUSTOM_SPOTS);
+  EXT = buildExtendedData(PROFILES, MATRIX, CUSTOM_SPOTS,
+                          { meshLevels: MESH_LEVELS, stationTables: STATION_TABLES });
 }
 
 function saveCustoms() {
@@ -342,6 +347,15 @@ async function init() {
   fetch("data/travel_routes.json")
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => { ROUTES = j; })
+    .catch(() => {});
+  // 追加スポット用の実データ(どちらも任意。無ければ概算・テンプレートにフォールバック)
+  fetch("data/mesh_levels.json")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { if (j) { MESH_LEVELS = j.levels; refreshExt(); render(); } })
+    .catch(() => {});
+  fetch("data/spot_station_tables.json")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { if (j) { STATION_TABLES = j; refreshExt(); render(); } })
     .catch(() => {});
   loadAlerts(); // 待たない: 運行情報が遅くても本体の描画を止めない
   const monthSel = document.getElementById("month");
@@ -432,7 +446,10 @@ function render() {
     card.innerHTML = `
       <h3>${name} <span class="chip">${s.custom ? t.customChip : categoryLabel(s.category)}</span>
         ${s.custom ? `<span class="spacer"></span><button class="delbtn" data-del="${s.id}">${t.remove}</button>` : ""}</h3>
-      <div class="sub">${s.custom ? `${categoryLabel(s.category)} ・ ${t.customNote}`
+      <div class="sub">${s.custom
+        ? (s.level_source === "mesh"
+            ? `${categoryLabel(s.category)} ・ ${t.crowd}Lv ${lvl} ・ ${t.customNoteMesh}`
+            : `${categoryLabel(s.category)} ・ ${t.customNote}`)
         : `${lang === "ja" ? s.name_en : s.name_ja} ・ ${t.crowd}Lv ${lvl}`}</div>
       <div class="heat">${heat}</div>
       <div class="hlabels">${HOURS.map((h) => `<span>${h}</span>`).join("")}</div>
@@ -545,14 +562,8 @@ function renderItineraryMap(legs) {
 }
 
 /* ---------------- 路線案内(任意データ) ---------------- */
-/* 移動区間 a→b の乗車路線チェーンを整形する。データが無ければ""(従来表示のまま) */
-function routeChain(a, b, dayType) {
-  if (!ROUTES || !ROUTES[dayType]) return "";
+function formatChainText(route) {
   const t = I18N[lang];
-  const ia = ROUTES.spot_ids.indexOf(a), ib = ROUTES.spot_ids.indexOf(b);
-  if (ia < 0 || ib < 0) return "";
-  const route = ROUTES[dayType][ia][ib];
-  if (route === null || route === undefined) return "";
   if (route.length === 0) return `🚶 ${t.walkOnly}`;
   return "🚇 " + route.map((r) => {
     const names = typeof RAILWAY_NAMES !== "undefined" && RAILWAY_NAMES[r.line];
@@ -561,6 +572,19 @@ function routeChain(a, b, dayType) {
     const to = lang === "ja" ? r.to[0] : r.to[1] || r.to[0];
     return `${line} (${from}→${to})`;
   }).join(" → ");
+}
+
+/* 移動区間 a→b の乗車路線チェーンを整形する。データが無ければ""(従来表示のまま) */
+function routeChain(a, b, dayType) {
+  // 追加スポットを含む区間: 駅テーブルから計算したチェーン
+  const cr = EXT.customRoutes && EXT.customRoutes[a] && EXT.customRoutes[a][b];
+  if (cr && cr[dayType] !== undefined) return formatChainText(cr[dayType]);
+  if (!ROUTES || !ROUTES[dayType]) return "";
+  const ia = ROUTES.spot_ids.indexOf(a), ib = ROUTES.spot_ids.indexOf(b);
+  if (ia < 0 || ib < 0) return "";
+  const route = ROUTES[dayType][ia][ib];
+  if (route === null || route === undefined) return "";
+  return formatChainText(route);
 }
 
 /* ---------------- 行程計算 ---------------- */
@@ -595,14 +619,14 @@ function runPlan() {
       <div class="ameta">${ALERTS_DEMO ? t.alertsDemo + " ・ " : ""}${t.alertsSource}</div>
     </div>`;
     const head = r.reduction_pct > 0 ? t.reduction(r.reduction_pct) : t.noBaseline;
-    const customIds = new Set(CUSTOM_SPOTS.map((c) => c.id));
-    const hasCustom = r.legs.some((l) => customIds.has(l.spot_id));
-    const approxNote = hasCustom ? `<div class="notice">${t.approxWarn}</div>` : "";
+    const isApproxPair = (a, b) => !!(EXT.approx && EXT.approx[a] && EXT.approx[a][b]);
+    const hasApprox = r.legs.some((l, i) => i > 0 && isApproxPair(r.legs[i - 1].spot_id, l.spot_id));
+    const approxNote = hasApprox ? `<div class="notice">${t.approxWarn}</div>` : "";
     el.innerHTML = alertHtml + `<div class="reduction">${head}</div>` + approxNote + r.legs.map((l, i) => {
       const name = lang === "ja" ? l.name_ja : l.name_en;
       const lvlIdx = l.crowd_pct < 30 ? 0 : l.crowd_pct < 55 ? 1 : l.crowd_pct < 80 ? 2 : 3;
       const chain = i > 0 ? routeChain(r.legs[i - 1].spot_id, l.spot_id, r.day_type) : "";
-      const isApprox = i > 0 && (customIds.has(l.spot_id) || customIds.has(r.legs[i - 1].spot_id));
+      const isApprox = i > 0 && isApproxPair(r.legs[i - 1].spot_id, l.spot_id);
       const travel = i > 0 ? `<div class="travel">${t.travel(l.travel_min)}${isApprox ? " " + t.approx : ""}${
         chain ? `<br><span class="rtchain">${chain}</span>` : ""}</div>` : "";
       return `${travel}<div class="leg">
