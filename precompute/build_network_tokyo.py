@@ -29,7 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 ODPT_DIR = ROOT / "data" / "odpt"
 OUT_PKL = ROOT / "data" / "network_tokyo.pkl"
 
-OPERATORS = ["TokyoMetro", "Toei", "TWR", "Tobu", "Keio"]
+OPERATORS = ["TokyoMetro", "Toei", "TWR", "Tobu", "Keio", "Yurikamome"]
+# ゆりかもめの列車時刻表は駅時刻表からの復元(reconstruct_yurikamome.pyを先に実行すること)
 
 # 徒歩乗換のパラメータ
 TRANSFER_MAX_M = 500        # 直線距離でこの範囲の駅同士は徒歩乗換できる(大手町-東京など)
