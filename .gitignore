@@ -1,0 +1,6 @@
+# ダウンロードデータは追跡しない(手動整備のマスタは例外)
+data/*
+!data/spots.csv
+__pycache__/
+*.pyc
+.DS_Store
