@@ -42,6 +42,9 @@
       `fetch_odpt_network.py → reconstruct_yurikamome.py → build_network_tokyo.py →
       build_travel_matrix.py` の順に実行(ゆりかもめの駅時刻表取得もfetchスクリプトに組込み済み。
       生成ロジックは合成ネットワークの単体テストでも検証: test_travel_routes.py)
+- [x] 選択の一括クリア+ユーザー追加スポット(2026-07-16) — 地図クリックで任意の場所を
+      行程に追加できる(js/custom_spots.js・単体テスト10件)。混雑はカテゴリ別テンプレート、
+      所要時間は最寄り公式スポット経由+徒歩の概算(UI上も「概算」と明示)。localStorageに保存
 - [ ] M7: LLMコンシェルジュ
 - [ ] M8: 応募材料の最終化(カーブv1化・デモ動画・応募文面)
 
