@@ -45,15 +45,11 @@
 - [x] 選択の一括クリア+ユーザー追加スポット(2026-07-16) — 地図クリックで任意の場所を
       行程に追加できる(js/custom_spots.js・単体テスト10件)。混雑はカテゴリ別テンプレート、
       所要時間は最寄り公式スポット経由+徒歩の概算(UI上も「概算」と明示)。localStorageに保存
-- [ ] 追加スポットの実データ化 — コード完成・テスト済み(2026-07-16)。**データ生成待ち。**
-      次の2ファイルを生成・コミットすると、追加地点の混雑レベルが人流実データに、
-      公式⇔追加の所要時間・乗車路線が実ダイヤ由来の代表値になる(概算表記は追加同士のみに縮小):
-      - `webapp/data/mesh_levels.json` ← `python3 precompute/build_mesh_levels.py`
-        (要: data/monthly_mdp_mesh1km_13.zip =
-        [人流オープンデータ](https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto)の東京都分)
-      - `webapp/data/spot_station_tables.json` ← `python3 precompute/export_spot_station_tables.py`
-        (要: data/network_tokyo.pkl = M3再生成時に作成済み)
-      ※どちらも時刻表の再配布ではなく集計済み派生物。無ければ従来の概算にフォールバック
+- [x] 追加スポットの実データ化(2026-07-16) — `webapp/data/mesh_levels.json`(1732メッシュ)・
+      `webapp/data/spot_station_tables.json`(公式22箇所⇔全643駅・チェーン19141種、2.1MB)を
+      実データで生成済み。追加地点の混雑レベルは人流実データ、公式⇔追加の所要時間・乗車路線は
+      実ダイヤ由来になった(概算表記は追加スポット同士のみ)。再生成手順は上記2スクリプトを参照
+      (要: 人流ZIP・network_tokyo.pkl)。どちらも時刻表の再配布ではなく集計済み派生物
 - [ ] M7: LLMコンシェルジュ
 - [ ] M8: 応募材料の最終化(カーブv1化・デモ動画・応募文面)
 
