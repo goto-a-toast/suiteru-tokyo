@@ -112,7 +112,8 @@
 <main>
   <p class="notice" id="t-notice">
     ここに表示する混雑は、統計(国交省 人流オープンデータ2019年ほか)と公表資料に基づく<b>予報</b>であり、
-    リアルタイムの実測ではありません。
+    リアルタイムの実測ではありません。2019年データは場所どうしの<b>相対比較</b>にのみ使い、
+    2024〜25年の公表統計で検証・補正しています。
   </p>
 
   <div id="alerts"></div>
@@ -175,7 +176,7 @@ const TRAIN_INFO_URL = "";
 const I18N = {
   ja: {
     tagline: "「いつ行くか」を変えるだけで、東京はすいてる。",
-    notice: "ここに表示する混雑は、統計(国交省 人流オープンデータ2019年ほか)と公表資料に基づく<b>予報</b>であり、リアルタイムの実測ではありません。",
+    notice: "ここに表示する混雑は、統計(国交省 人流オープンデータ2019年ほか)と公表資料に基づく<b>予報</b>であり、リアルタイムの実測ではありません。2019年データは場所どうしの<b>相対比較</b>にのみ使い、2024〜25年の公表統計で検証・補正しています。",
     day: "曜日タイプ", start: "開始", end: "終了", month: "月",
     monthNames: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"],
     besttime: "おすすめの時間帯: ", crowdlevel: ["すいてる","やや混雑","混雑","かなり混雑"],
@@ -205,7 +206,9 @@ const I18N = {
     alertsPlanTitle: "⚠ この行程に関係する可能性のある運行情報",
     alertsAffects: "影響の可能性: ",
     alertsSource: "出典: 公共交通オープンデータセンター/チャレンジ2026 運行情報",
-    footer: `出典: <a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto">国土交通省 全国の人流オープンデータ</a>(2019年・1kmメッシュ)、
+    footer: `出典: <a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto">国土交通省 全国の人流オープンデータ</a>(2019年・1kmメッシュ。
+      コロナ調査の一環で公開された唯一のオープン実測人流で2022年以降の更新はなく、2020-21年は行動制限で歪むため最終平常年の2019年を採用。
+      スポット間の相対レベルにのみ使用し、2024〜25年の公表統計で<a href="https://github.com/goto-a-toast/suiteru-tokyo/blob/main/docs/level_validation_2026.md">検証・補正済み</a>)、
       <a href="https://ckan.odpt.org/">公共交通オープンデータセンター</a>および公共交通オープンデータチャレンジ2026限定データ
       (東京メトロ・都営交通・りんかい線・東武・京王・ゆりかもめの列車時刻表)。<br>
       時間帯カーブは観光地タイプ別の推定テンプレート(v0)です。JR東日本・京成の時刻表データは未提供のため、
@@ -216,7 +219,7 @@ const I18N = {
   },
   en: {
     tagline: "Tokyo is uncrowded — if you change when you go.",
-    notice: "Crowd levels shown here are <b>forecasts</b> based on statistics (MLIT people-flow open data 2019, etc.) and published sources — not real-time measurements.",
+    notice: "Crowd levels shown here are <b>forecasts</b> based on statistics (MLIT people-flow open data 2019, etc.) and published sources — not real-time measurements. The 2019 baseline is used only for <b>relative comparison</b> between places, validated and adjusted against 2024–25 published statistics.",
     day: "Day type", start: "Start", end: "End", month: "Month",
     monthNames: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
     besttime: "Best time to visit: ", crowdlevel: ["Quiet","Moderate","Crowded","Very crowded"],
@@ -246,7 +249,9 @@ const I18N = {
     alertsPlanTitle: "⚠ Service alerts that may affect this itinerary",
     alertsAffects: "May affect: ",
     alertsSource: "Source: ODPT Center / Challenge 2026 train information",
-    footer: `Sources: <a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto">MLIT nationwide people-flow open data</a> (2019, 1km mesh),
+    footer: `Sources: <a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto">MLIT nationwide people-flow open data</a> (2019, 1km mesh —
+      the only open measured people-flow dataset, discontinued after 2021; 2019 is its last pre-pandemic year. Used for relative levels between spots only,
+      <a href="https://github.com/goto-a-toast/suiteru-tokyo/blob/main/docs/level_validation_2026.md">validated & adjusted against 2024–25 statistics</a>),
       <a href="https://ckan.odpt.org/">Public Transportation Open Data Center</a> and Challenge 2026 limited data
       (train timetables of Tokyo Metro, Toei, Rinkai Line, Tobu, Keio, Yurikamome).<br>
       Hourly curves are type-based estimate templates (v0). JR East and Keisei timetables are not published as open data,
