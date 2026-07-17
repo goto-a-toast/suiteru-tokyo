@@ -805,7 +805,7 @@
     20
    ],
    "level": {
-    "weekday": 109,
+    "weekday": 100,
     "holiday": 97
    }
   },
@@ -940,7 +940,7 @@
     17
    ],
    "level": {
-    "weekday": 101,
+    "weekday": 100,
     "holiday": 95
    }
   },
@@ -1206,7 +1206,7 @@
     22
    ],
    "level": {
-    "weekday": 121,
+    "weekday": 100,
     "holiday": 100
    }
   },

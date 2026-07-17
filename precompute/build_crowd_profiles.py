@@ -150,14 +150,18 @@ def main():
         print(f"警告: 人流データが見つからないスポット: {missing}")
 
     # レベルの正規化: 対数スケールで0-100に(渋谷と柴又は桁が違うため、
-    # そのまま比例させると小さいスポットが全部0になってしまう)
+    # そのまま比例させると小さいスポットが全部0になってしまう)。
+    # アンカーはholiday側の最大値のみ(意図的: 「休日の混み方」を基準の物差しにする。
+    # 平日は駅利用など別の理由で値が跳ねることがあるため基準には使わない)。
+    # そのため平日値が休日側の最大を超えて100超になることがあるので0-100にクランプする
+    # (webapp/data/mesh_levels.jsonの正規化と同じクランプ方針で揃えている)
     max_raw = max(p["level_raw"]["holiday"] for p in profiles)
     min_raw = min(min(p["level_raw"]["weekday"], p["level_raw"]["holiday"]) for p in profiles)
     for p in profiles:
         for k in ("weekday", "holiday"):
             v = p["level_raw"][k]
             score = 100 * (math.log(v) - math.log(min_raw)) / (math.log(max_raw) - math.log(min_raw))
-            p.setdefault("level", {})[k] = round(score)
+            p.setdefault("level", {})[k] = max(0, min(100, round(score)))
 
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     out = {
